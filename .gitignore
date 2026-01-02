@@ -22,14 +22,14 @@ share/python-wheels/
 .installed.cfg
 *.egg
 MANIFEST
-
-# Virtual Environments
-venv/
 .venv/
+venv/
 env/
 ENV/
 env.bak/
 venv.bak/
+.venv
+venv
 
 # IDE
 .vscode/
@@ -38,6 +38,7 @@ venv.bak/
 *.swo
 *~
 .DS_Store
+*.pyc
 
 # Testing
 .pytest_cache/
