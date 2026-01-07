@@ -616,6 +616,34 @@ class RedisChat:
         }
         self.redis_request("LPUSH", [CHAT_KEY, json.dumps(msg_data)])
 
+    def get_optimal_model(self):
+        """Dynamically find the best available Gemini model"""
+        print(Fore.CYAN + "Discovering available models..." + Style.RESET_ALL)
+        try:
+            available_models = []
+            for m in genai.list_models():
+                if 'generateContent' in m.supported_generation_methods:
+                    available_models.append(m.name)
+            
+            if not available_models:
+                return None
+                
+            # Preference order
+            preferences = ['gemini-1.5-flash', 'gemini-1.5-pro', 'gemini-pro', 'gemini-1.0-pro']
+            
+            # Check for exact matches or partial matches
+            for pref in preferences:
+                for model in available_models:
+                    if pref in model:
+                        return model
+            
+            # Fallback to first available
+            return available_models[0]
+            
+        except Exception as e:
+            print(Fore.RED + f"Error listing models: {e}")
+            return "gemini-1.5-flash" # Blind fallback
+
     def start_gemini_cli(self):
         """Start interactive Gemini CLI session"""
         if not GEMINI_AVAILABLE:
@@ -648,8 +676,14 @@ class RedisChat:
              print(Fore.RED + "Error: No API Key available. Cannot start Gemini session.")
              return
 
-        # Try to initialize with the best model, but be ready to fallback
-        current_model_name = 'gemini-1.5-flash'
+        # Dynamic Model Selection
+        current_model_name = self.get_optimal_model()
+        if not current_model_name:
+             print(Fore.RED + "Error: No valid Gemini models found for this API Key.")
+             return
+             
+        print(Fore.GREEN + f"✓ Using model: {current_model_name}" + Style.RESET_ALL)
+        
         model = genai.GenerativeModel(current_model_name)
         chat_session = model.start_chat(history=[])
 
@@ -681,32 +715,9 @@ class RedisChat:
                     print(Fore.GREEN + "✓ Response sent to chat" + Style.RESET_ALL + "\n")
                     
                 except Exception as e:
-                    error_str = str(e)
-                    if "not found" in error_str or "404" in error_str:
-                         print(Fore.YELLOW + f"⚠ Model {current_model_name} failed. Trying fallback...")
-                         # Fallback strategy
-                         if current_model_name == 'gemini-1.5-flash':
-                             current_model_name = 'gemini-pro'
-                         elif current_model_name == 'gemini-pro':
-                             current_model_name = 'gemini-1.0-pro'
-                         else:
-                             print(Fore.RED + "All models failed. Check your API Key permissions.")
-                             continue
-                             
-                         # Re-init with new model
-                         model = genai.GenerativeModel(current_model_name)
-                         chat_session = model.start_chat(history=[])
-                         
-                         # Retry sending the message ONCE
-                         try:
-                            response = chat_session.send_message(user_input)
-                            self.post_as_bot(f"{Fore.MAGENTA}Gemini AI 🤖{Style.RESET_ALL}", response.text)
-                            print(Fore.GREEN + f"✓ Response sent using {current_model_name}" + Style.RESET_ALL + "\n")
-                         except Exception as retry_e:
-                            print(Fore.RED + f"\nFallback failed: {retry_e}\n")
-                            
-                    else:
-                        print(Fore.RED + f"\nError from Gemini: {e}\n")
+                    print(Fore.RED + f"\nError from Gemini: {e}\n")
+                    # If error is 404, maybe re-list models? 
+                    # For now, just show error to avoid infinite loops
                     
             except KeyboardInterrupt:
                 print("\nReturning to main chat...")
