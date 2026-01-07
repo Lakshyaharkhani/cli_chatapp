@@ -35,19 +35,27 @@ UPSTASH_REDIS_REST_TOKEN="ATDQAAIncDJkMGMyZGE3MTViYjI0NWMyYmU2YzA0NWY2OWViNDM0YX
 python chat.py
 ```
 
-## How to Use
-
-1. **Start the app** and enter your username
-2. **Send messages** - Just type and press Enter
-3. **View history** - Type `/history` to see recent messages
-4. **Get help** - Type `/help` for command list
-5. **Exit** - Type `/quit` or press Ctrl+C
+### 4. Setup Gemini AI (Optional)
+To use the AI chatbot features:
+1. Obtain an API key from [Google AI Studio](https://makersuite.google.com/app/apikey).
+2. Either add it to your local `.env` file:
+   ```
+   GEMINI_API_KEY="your_api_key_here"
+   ```
+3. OR use the shared key feature inside the app:
+   ```
+   /set_gemini_key your_api_key_here
+   ```
+   This saves the key to the shared Redis storage so everyone on the team can use it without needing their own key!
 
 ## Commands
 
 | Command | Description |
 |---------|-------------|
 | `/history` | Display last 20 messages |
+| `/gemini` | Enter AI Chat Mode 🤖 |
+| `/set_gemini_key <key>` | Share an API key with the group 🔑 |
+| `@user /silent <msg>` | Send a private message 🤫 |
 | `/help` | Show help menu |
 | `/quit` | Exit the application |
 | Any text | Send a message |
@@ -58,18 +66,24 @@ Each message stores:
 - **Username** - Who sent it
 - **Message** - The actual message content
 - **Timestamp** - When it was sent (YYYY-MM-DD HH:MM:SS)
+- **Recipients** - For private messages
+- **Is Silent** - Flag for private messages
 
 ## How It Works
 
 - Messages are stored in Upstash Redis using a list (LPUSH)
 - Background thread checks for new messages every 1 second
 - New messages appear in real-time while you're typing
-- Message history persists as long as Redis storage is available
+- **Gemini Integration**: 
+  - The app first checks your local `.env` for a key.
+  - If missing (or is a placeholder), it fetches the shared key from Redis (`chat:config:gemini_key`).
+  - This allows seamless AI usage for all team members.
 
 ## Technical Stack
 
 - **Python 3.x**
 - **Upstash Redis** (REST API)
+- **Google Generative AI** (Gemini)
 - **Requests** - HTTP library for Redis communication
 - **Threading** - Background message streaming
 - **Colorama** - Terminal colors
@@ -88,12 +102,25 @@ Enter your username: Alice
 [2026-01-02 10:30:45] Bob: Hey everyone!
 [2026-01-02 10:31:12] Charlie: Hello!
 
+>>> /gemini
+============================================================
+Entered Gemini AI CLI Mode
+Type your prompt or /exit to return to chat
+============================================================
+
+Gemini > Write a poem about coding
+Thinking...
+In realms of logic, lines involved,
+A digital tapestry evolved...
+
+Gemini > /exit
+Exiting Gemini Mode...
+
+>>> /set_gemini_key AIzaSy...
+✓ Gemini API Key saved to shared storage! Friends can now use it.
+
 >>> Hi there!
 ✓ Message sent
-
---- New message(s) received ---
-[2026-01-02 10:31:20] Bob: Hi Alice!
->>>
 ```
 
 Enjoy chatting! 🚀
