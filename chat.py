@@ -655,15 +655,29 @@ class RedisChat:
         print(PRIMARY_COLOR + "Type your prompt or " + Fore.MAGENTA + "/exit" + PRIMARY_COLOR + " to return to chat")
         print(PRIMARY_COLOR + "="*60 + "\n")
 
-        # Auto-configure API Key (Prioritize Redis if user requested, or Local if available)
-        # User requested: "make the api from redis is used"
-        # We will attempt to fetch from Redis to ensure we have the latest shared key
+    def start_gemini_cli(self):
+        """Start interactive Gemini CLI session"""
+        if not GEMINI_AVAILABLE:
+            print(PRIMARY_COLOR + "Error: google-generativeai package not installed")
+            return
+            
+        print(PRIMARY_COLOR + "\n" + "="*60)
+        Effects.typewriter("Entered Gemini AI CLI Mode", color=Fore.MAGENTA)
+        print(PRIMARY_COLOR + "Type your prompt or " + Fore.MAGENTA + "/exit" + PRIMARY_COLOR + " to return to chat")
+        print(PRIMARY_COLOR + "="*60 + "\n")
+
+        # Auto-configure API Key
+        # Prioritize Local .env Key if it exists, otherwise check Redis
         print(Fore.CYAN + "Configuring Secure Access..." + Style.RESET_ALL)
         
         global GEMINI_API_KEY
-        # Check Redis explicitly as requested, falling back to local .env if Redis fails/empty
-        print(Fore.MAGENTA + "Syncing shared key from Redis...")
-        self.fetch_gemini_key_from_redis()
+        if GEMINI_API_KEY:
+             # Re-configure to be sure
+             genai.configure(api_key=GEMINI_API_KEY)
+             print(Fore.GREEN + "✓ Using Local API Key.")
+        else:
+             print(Fore.MAGENTA + "Syncing shared key from Redis...")
+             self.fetch_gemini_key_from_redis()
         
         # Validation
         if not GEMINI_API_KEY:
@@ -709,13 +723,49 @@ class RedisChat:
                     print(Fore.GREEN + "✓ Response sent to chat" + Style.RESET_ALL + "\n")
                     
                 except Exception as e:
-                    print(Fore.RED + f"\nError from Gemini: {e}\n")
-                    # If error is 404, maybe re-list models? 
-                    # For now, just show error to avoid infinite loops
-                    
-            except KeyboardInterrupt:
-                print("\nReturning to main chat...")
-                break
+                    error_str = str(e)
+                    # Handle 429 Rate Limit (Quota Exceeded)
+                    if "429" in error_str or "quota" in error_str.lower():
+                        print(Fore.YELLOW + "⚠ Quota Exceeded. Waiting 30s to retry...")
+                        remaining = 30
+                        while remaining > 0:
+                            print(f"Retrying in {remaining}s...", end="\r")
+                            time.sleep(1)
+                            remaining -= 1
+                        print(" "*20, end="\r")
+                        
+                        try:
+                             response = chat_session.send_message(user_input)
+                             self.post_as_bot(f"{Fore.MAGENTA}Gemini AI 🤖{Style.RESET_ALL}", response.text)
+                             print(Fore.GREEN + "✓ Retry successful!" + Style.RESET_ALL + "\n")
+                        except Exception as retry_e:
+                             print(Fore.RED + f"\nRetry failed: {retry_e}\n")
+
+                    elif "not found" in error_str or "404" in error_str:
+                         print(Fore.YELLOW + f"⚠ Model {current_model_name} failed. Trying fallback...")
+                         # Fallback strategy
+                         if current_model_name == 'gemini-1.5-flash':
+                             current_model_name = 'gemini-pro'
+                         elif current_model_name == 'gemini-pro':
+                             current_model_name = 'gemini-1.0-pro'
+                         else:
+                             print(Fore.RED + "All models failed. Check your API Key permissions.")
+                             continue
+                             
+                         # Re-init with new model
+                         model = genai.GenerativeModel(current_model_name)
+                         chat_session = model.start_chat(history=[])
+                         
+                         # Retry sending the message ONCE
+                         try:
+                            response = chat_session.send_message(user_input)
+                            self.post_as_bot(f"{Fore.MAGENTA}Gemini AI 🤖{Style.RESET_ALL}", response.text)
+                            print(Fore.GREEN + f"✓ Response sent using {current_model_name}" + Style.RESET_ALL + "\n")
+                         except Exception as retry_e:
+                            print(Fore.RED + f"\nFallback failed: {retry_e}\n")
+                            
+                    else:
+                        print(Fore.RED + f"\nError from Gemini: {e}\n")
     
     def run(self):
         """Main chat loop"""
