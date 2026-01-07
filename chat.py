@@ -218,30 +218,13 @@ class RedisChat:
         self.known_users = set()
         self.users_lock = threading.Lock()
         self.active_user_count = 1
+        self.last_online_fetch = 0
         
         # Try to load Gemini Key from Redis if not in Env
         global GEMINI_API_KEY
         if not GEMINI_API_KEY and GEMINI_AVAILABLE:
-            print(PRIMARY_COLOR + "\nNo local Gemini API Key found.")
-            user_key = input(PRIMARY_COLOR + "Enter your Gemini API Key directly (or press Enter to use the Shared System Key): ").strip()
-            
-            if user_key and len(user_key) > 10:
-                GEMINI_API_KEY = user_key
-                genai.configure(api_key=GEMINI_API_KEY)
-                print(PRIMARY_COLOR + "✓ Using provided API Key")
-                
-                # Optional: Offer to save to .env
-                save_env = input(PRIMARY_COLOR + "Save this key to .env for future use? (y/n): ").strip().lower()
-                if save_env == 'y':
-                    try:
-                        with open('.env', 'a') as f:
-                            f.write(f'\nGEMINI_API_KEY="{user_key}"')
-                        print(PRIMARY_COLOR + "✓ Saved to .env")
-                    except:
-                        pass
-            else:
-                 print(PRIMARY_COLOR + "⚠ No key provided. Attempting to fetch Shared System Key...")
-                 self.fetch_gemini_key_from_redis()
+            print(PRIMARY_COLOR + "Checking for Shared System Key...")
+            self.fetch_gemini_key_from_redis()
         elif GEMINI_API_KEY and GEMINI_AVAILABLE:
             # Configure with existing Env key
             try:
@@ -474,10 +457,12 @@ class RedisChat:
                 self.redis_request("ZREMRANGEBYSCORE", [ONLINE_USERS_KEY, "-inf", str(cutoff)])
                 
                 # C. Fetch online count & users
-                # C. Fetch online count & users - DISABLED by user request
-                # card_response = self.redis_request("ZCARD", [ONLINE_USERS_KEY])
-                # if card_response and "result" in card_response:
-                #      self.active_user_count = card_response["result"]
+                # C. Fetch online count & users - Every 3 minutes (180s)
+                if now - self.last_online_fetch > 180:
+                    card_response = self.redis_request("ZCARD", [ONLINE_USERS_KEY])
+                    if card_response and "result" in card_response:
+                         self.active_user_count = card_response["result"]
+                    self.last_online_fetch = now
                      
                 # Update known users for autocomplete (optional: fetch actual list)
                 # users_response = self.redis_request("ZRANGE", [ONLINE_USERS_KEY, 0, -1])
