@@ -648,7 +648,9 @@ class RedisChat:
              print(Fore.RED + "Error: No API Key available. Cannot start Gemini session.")
              return
 
-        model = genai.GenerativeModel('gemini-1.5-flash')
+        # Try to initialize with the best model, but be ready to fallback
+        current_model_name = 'gemini-1.5-flash'
+        model = genai.GenerativeModel(current_model_name)
         chat_session = model.start_chat(history=[])
 
         while True:
@@ -679,7 +681,32 @@ class RedisChat:
                     print(Fore.GREEN + "✓ Response sent to chat" + Style.RESET_ALL + "\n")
                     
                 except Exception as e:
-                    print(Fore.RED + f"\nError from Gemini: {e}\n")
+                    error_str = str(e)
+                    if "not found" in error_str or "404" in error_str:
+                         print(Fore.YELLOW + f"⚠ Model {current_model_name} failed. Trying fallback...")
+                         # Fallback strategy
+                         if current_model_name == 'gemini-1.5-flash':
+                             current_model_name = 'gemini-pro'
+                         elif current_model_name == 'gemini-pro':
+                             current_model_name = 'gemini-1.0-pro'
+                         else:
+                             print(Fore.RED + "All models failed. Check your API Key permissions.")
+                             continue
+                             
+                         # Re-init with new model
+                         model = genai.GenerativeModel(current_model_name)
+                         chat_session = model.start_chat(history=[])
+                         
+                         # Retry sending the message ONCE
+                         try:
+                            response = chat_session.send_message(user_input)
+                            self.post_as_bot(f"{Fore.MAGENTA}Gemini AI 🤖{Style.RESET_ALL}", response.text)
+                            print(Fore.GREEN + f"✓ Response sent using {current_model_name}" + Style.RESET_ALL + "\n")
+                         except Exception as retry_e:
+                            print(Fore.RED + f"\nFallback failed: {retry_e}\n")
+                            
+                    else:
+                        print(Fore.RED + f"\nError from Gemini: {e}\n")
                     
             except KeyboardInterrupt:
                 print("\nReturning to main chat...")
