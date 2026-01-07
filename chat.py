@@ -1,3 +1,5 @@
+# Last Updated: 2026-01-07
+# Description: Redis-based CLI Chat Application with Gemini AI integration
 import os
 import requests
 import json

@@ -1,4 +1,6 @@
 # Redis CLI Chat Application
+> **Last Updated:** 2026-01-07  
+
 
 A simple but powerful CLI chat application using Upstash Redis for persistent messaging.
 

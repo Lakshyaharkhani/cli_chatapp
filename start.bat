@@ -1,5 +1,6 @@
 @echo off
-REM Quick start script for Redis Chat CLI
+REM Last Updated: 2026-01-07
+REM Description: Quick start script for Redis Chat CLI
 
 echo.
 echo ====================================================

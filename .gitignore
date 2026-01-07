@@ -1,3 +1,5 @@
+# Last Updated: 2026-01-07
+# Description: Git ignore rules for Python, OS files, and secrets
 # Python
 __pycache__/
 *.py[cod]
