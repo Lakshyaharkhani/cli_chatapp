@@ -621,29 +621,31 @@ class RedisChat:
         if not GEMINI_AVAILABLE:
             print(PRIMARY_COLOR + "Error: google-generativeai package not installed")
             return
+            
         print(PRIMARY_COLOR + "\n" + "="*60)
         Effects.typewriter("Entered Gemini AI CLI Mode", color=Fore.MAGENTA)
         print(PRIMARY_COLOR + "Type your prompt or " + Fore.MAGENTA + "/exit" + PRIMARY_COLOR + " to return to chat")
         print(PRIMARY_COLOR + "="*60 + "\n")
 
-        # Ensure we have a key
-        global GEMINI_API_KEY
-        if not GEMINI_API_KEY:
-            print(PRIMARY_COLOR + "Gemini API Key not configured.")
-            user_key = input(Fore.YELLOW + "Enter API Key (or press Enter to use shared system key): " + Style.RESET_ALL).strip()
-            
-            if user_key:
-                 GEMINI_API_KEY = user_key
-                 genai.configure(api_key=GEMINI_API_KEY)
-                 print(Fore.GREEN + "✓ Key configured locally.")
-            else:
-                 print(Fore.MAGENTA + "Attempting to fetch shared key from Redis...")
-                 self.fetch_gemini_key_from_redis()
+        # ALWAYS Ask for key, regardless of .env (as requested by user)
+        # This allows recovering from an expired local key
+        print(Fore.CYAN + "Configuring Secure Access..." + Style.RESET_ALL)
         
-        # Double check if we have a key now
+        user_key = input(Fore.YELLOW + "Enter API Key (or press Enter to use Shared System Key): " + Style.RESET_ALL).strip()
+        
+        global GEMINI_API_KEY
+        
+        if user_key:
+             GEMINI_API_KEY = user_key
+             genai.configure(api_key=GEMINI_API_KEY)
+             print(Fore.GREEN + "✓ Using provided API key.")
+        else:
+             print(Fore.MAGENTA + "Fetching shared key from Redis...")
+             self.fetch_gemini_key_from_redis()
+        
+        # Validation
         if not GEMINI_API_KEY:
              print(Fore.RED + "Error: No API Key available. Cannot start Gemini session.")
-             print(Fore.RED + "Please add GEMINI_API_KEY to .env or use /set_gemini_key")
              return
 
         model = genai.GenerativeModel('gemini-1.5-flash')
