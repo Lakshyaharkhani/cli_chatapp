@@ -655,25 +655,19 @@ class RedisChat:
         print(PRIMARY_COLOR + "Type your prompt or " + Fore.MAGENTA + "/exit" + PRIMARY_COLOR + " to return to chat")
         print(PRIMARY_COLOR + "="*60 + "\n")
 
-        # ALWAYS Ask for key, regardless of .env (as requested by user)
-        # This allows recovering from an expired local key
+        # Auto-configure API Key (Prioritize Redis if user requested, or Local if available)
+        # User requested: "make the api from redis is used"
+        # We will attempt to fetch from Redis to ensure we have the latest shared key
         print(Fore.CYAN + "Configuring Secure Access..." + Style.RESET_ALL)
         
-        user_key = input(Fore.YELLOW + "Enter API Key (or press Enter to use Shared System Key): " + Style.RESET_ALL).strip()
-        
         global GEMINI_API_KEY
-        
-        if user_key:
-             GEMINI_API_KEY = user_key
-             genai.configure(api_key=GEMINI_API_KEY)
-             print(Fore.GREEN + "✓ Using provided API key.")
-        else:
-             print(Fore.MAGENTA + "Fetching shared key from Redis...")
-             self.fetch_gemini_key_from_redis()
+        # Check Redis explicitly as requested, falling back to local .env if Redis fails/empty
+        print(Fore.MAGENTA + "Syncing shared key from Redis...")
+        self.fetch_gemini_key_from_redis()
         
         # Validation
         if not GEMINI_API_KEY:
-             print(Fore.RED + "Error: No API Key available. Cannot start Gemini session.")
+             print(Fore.RED + "Error: No API Key available (Local or Shared). Cannot start Gemini session.")
              return
 
         # Dynamic Model Selection
