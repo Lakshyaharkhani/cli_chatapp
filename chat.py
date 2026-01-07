@@ -871,9 +871,11 @@ class RedisChat:
                             
                     else:
                         print(Fore.RED + f"\nError from Gemini: {e}\n")
-    
+            except KeyboardInterrupt:
+                print("\nReturning to main chat...")
+                break
+
     def run(self):
-        """Main chat loop"""
         # Display Banner with fancy effects
         if os.path.exists("banner.txt"):
             try:
