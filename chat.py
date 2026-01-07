@@ -66,7 +66,9 @@ load_dotenv()
 # Redis Configuration (Loaded from .env)
 REDIS_URL = os.getenv("UPSTASH_REDIS_REST_URL")
 REDIS_TOKEN = os.getenv("UPSTASH_REDIS_REST_TOKEN")
-GEMINI_API_KEY = None  # Will be fetched from Redis
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+if GEMINI_API_KEY and "paste_your_gemini_api_key" in GEMINI_API_KEY:
+    GEMINI_API_KEY = None
 
 # Simple color theme
 PRIMARY_COLOR = Fore.GREEN
