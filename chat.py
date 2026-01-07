@@ -474,9 +474,10 @@ class RedisChat:
                 self.redis_request("ZREMRANGEBYSCORE", [ONLINE_USERS_KEY, "-inf", str(cutoff)])
                 
                 # C. Fetch online count & users
-                card_response = self.redis_request("ZCARD", [ONLINE_USERS_KEY])
-                if card_response and "result" in card_response:
-                     self.active_user_count = card_response["result"]
+                # C. Fetch online count & users - DISABLED by user request
+                # card_response = self.redis_request("ZCARD", [ONLINE_USERS_KEY])
+                # if card_response and "result" in card_response:
+                #      self.active_user_count = card_response["result"]
                      
                 # Update known users for autocomplete (optional: fetch actual list)
                 # users_response = self.redis_request("ZRANGE", [ONLINE_USERS_KEY, 0, -1])
@@ -776,6 +777,11 @@ class RedisChat:
         print(Fore.CYAN + "Configuring Secure Access..." + Style.RESET_ALL)
         
         global GEMINI_API_KEY
+        
+        # explicit check for placeholder or empty
+        if GEMINI_API_KEY and "paste_your" in GEMINI_API_KEY:
+            GEMINI_API_KEY = None
+
         if GEMINI_API_KEY:
              # Re-configure to be sure
              genai.configure(api_key=GEMINI_API_KEY)
@@ -875,6 +881,24 @@ class RedisChat:
                 print("\nReturning to main chat...")
                 break
 
+    def refresh_online_users(self):
+        """Manually fetch online user count (Called via /refresh)"""
+        ONLINE_USERS_KEY = "chat:online_users_zset"
+        print(Fore.CYAN + "Refreshing online user list..." + Style.RESET_ALL)
+        
+        try:
+            # 1. Fetch Count
+            card_response = self.redis_request("ZCARD", [ONLINE_USERS_KEY])
+            count = 0
+            if card_response and "result" in card_response:
+                 count = card_response["result"]
+            self.active_user_count = count
+            
+            print(Fore.GREEN + f"✓ Online Users: {count}" + Style.RESET_ALL)
+            
+        except Exception as e:
+            print(Fore.RED + f"Error refreshing users: {e}")
+
     def run(self):
         # Display Banner with fancy effects
         if os.path.exists("banner.txt"):
@@ -929,11 +953,12 @@ class RedisChat:
             while self.running:
                 try:
                     # Dynamic colorful prompt
-                    prompt_str = f"[{self.active_user_count}] >>> "
+                    # Dynamic colorful prompt
+                    prompt_str = ">>> "
                     # We'll rely on our custom style for the prompt if possible, or just pass simple ANSI
                     # For simplicity with current setup, we keep the ANSI prompt but use lexer for input
                     
-                    ansi_prompt = f"{Fore.CYAN}[{Fore.GREEN}Live:{Fore.YELLOW}{self.active_user_count}{Fore.CYAN}] {Fore.GREEN}>>> {Style.RESET_ALL}"
+                    ansi_prompt = f"{Fore.GREEN}>>> {Style.RESET_ALL}"
                     
                     if PROMPT_TOOLKIT_AVAILABLE:
                          # session.prompt handles the input highlighting via lexer
@@ -950,6 +975,8 @@ class RedisChat:
                         break
                     elif message.lower() == "/help":
                         self.show_help()
+                    elif message.lower() == "/refresh":
+                        self.refresh_online_users()
                     elif message.lower() == "/history":
                         self.show_history()
                     elif message.lower() == "/gemini":
