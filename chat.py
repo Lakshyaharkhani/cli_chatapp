@@ -4,6 +4,7 @@ import json
 import time
 import threading
 import re
+import os
 from datetime import datetime
 from dotenv import load_dotenv
 from colorama import Fore, Style, init
@@ -56,19 +57,16 @@ except ImportError:
     PROMPT_TOOLKIT_AVAILABLE = False
 
 # Initialize colorama
-# Initialize colorama
 # strip=False ensures we send raw ANSI codes which prompt_toolkit/Windows Terminal can handle
 init(autoreset=True, strip=False)
 
 # Load environment variables
 load_dotenv()
 
+# Redis Configuration (Loaded from .env)
 REDIS_URL = os.getenv("UPSTASH_REDIS_REST_URL")
 REDIS_TOKEN = os.getenv("UPSTASH_REDIS_REST_TOKEN")
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-
-if GEMINI_AVAILABLE and GEMINI_API_KEY:
-    genai.configure(api_key=GEMINI_API_KEY)
+GEMINI_API_KEY = None  # Will be fetched from Redis
 
 # Simple color theme
 PRIMARY_COLOR = Fore.GREEN
@@ -78,7 +76,10 @@ SILENT_COLOR = Fore.MAGENTA
 ERROR_COLOR = Fore.RED
 
 if not REDIS_URL or not REDIS_TOKEN:
-    print(PRIMARY_COLOR + "Error: Missing UPSTASH credentials in .env file")
+    print(ERROR_COLOR + "Error: Missing UPSTASH_REDIS_REST_URL or UPSTASH_REDIS_REST_TOKEN in .env")
+    print(ERROR_COLOR + "Please check your .env file.")
+    # Keep window open if double-clicked
+    input("Press Enter to exit...")
     exit(1)
 
 CHAT_KEY = "chat:messages"
@@ -126,18 +127,26 @@ class RedisChat:
     def fetch_gemini_key_from_redis(self):
         """Fetch Gemini API key from Redis shared storage"""
         print(PRIMARY_COLOR + "Checking Redis for shared Gemini API key...")
+        global GEMINI_API_KEY
+        key = None
+        
         try:
             response = self.redis_request("GET", [CONFIG_GEMINI_KEY])
             if response and response.get("result"):
                 key = response["result"]
-                genai.configure(api_key=key)
-                global GEMINI_API_KEY 
-                GEMINI_API_KEY = key
                 print(PRIMARY_COLOR + "✓ Loaded Gemini API Key from sync storage")
             else:
-                print(PRIMARY_COLOR + "! No Gemini API Key found in storage.")
+                print(ERROR_COLOR + "⚠ No Gemini API Key found in shared storage.")
+                print(ERROR_COLOR + "  Use /set_gemini_key <key> to configure it for everyone.")
         except Exception as e:
-            print(ERROR_COLOR + f"Failed to fetch key: {e}")
+            print(ERROR_COLOR + f"Failed to fetch key from Redis: {e}")
+
+        if key:
+            try:
+                genai.configure(api_key=key)
+                GEMINI_API_KEY = key
+            except Exception as e:
+                print(ERROR_COLOR + f"Failed to configure Gemini: {e}")
 
     def set_gemini_key_in_redis(self, key):
         """Securely save Gemini API key to Redis"""
@@ -474,7 +483,7 @@ class RedisChat:
         print(PRIMARY_COLOR + "Type your prompt or /exit to return to chat")
         print(PRIMARY_COLOR + "="*60 + "\n")
 
-        model = genai.GenerativeModel('gemini-2.5-flash')
+        model = genai.GenerativeModel('gemini-1.5-flash')
         chat_session = model.start_chat(history=[])
 
         while True:
