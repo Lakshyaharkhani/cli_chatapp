@@ -242,6 +242,12 @@ class RedisChat:
             else:
                  print(PRIMARY_COLOR + "⚠ No key provided. Attempting to fetch Shared System Key...")
                  self.fetch_gemini_key_from_redis()
+        elif GEMINI_API_KEY and GEMINI_AVAILABLE:
+            # Configure with existing Env key
+            try:
+                genai.configure(api_key=GEMINI_API_KEY)
+            except:
+                pass
             
     def fetch_gemini_key_from_redis(self):
         """Fetch Gemini API key from Redis shared storage"""
@@ -598,19 +604,47 @@ class RedisChat:
         print(f"{DESC}Any text   - Send a message")
         print(PRIMARY_COLOR + "="*60 + "\n")
 
+    def post_as_bot(self, bot_name, text):
+        """Send a message as a bot/system user"""
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        msg_data = {
+            "username": bot_name,
+            "message": text,
+            "timestamp": timestamp,
+            "recipients": [],
+            "is_silent": False
+        }
+        self.redis_request("LPUSH", [CHAT_KEY, json.dumps(msg_data)])
+
     def start_gemini_cli(self):
         """Start interactive Gemini CLI session"""
         if not GEMINI_AVAILABLE:
             print(PRIMARY_COLOR + "Error: google-generativeai package not installed")
             return
-        if not GEMINI_API_KEY:
-            print(PRIMARY_COLOR + "Error: GEMINI_API_KEY not found in .env")
-            return
-
         print(PRIMARY_COLOR + "\n" + "="*60)
-        print(Effects.typewriter("Entered Gemini AI CLI Mode", color=Fore.MAGENTA))
+        Effects.typewriter("Entered Gemini AI CLI Mode", color=Fore.MAGENTA)
         print(PRIMARY_COLOR + "Type your prompt or " + Fore.MAGENTA + "/exit" + PRIMARY_COLOR + " to return to chat")
         print(PRIMARY_COLOR + "="*60 + "\n")
+
+        # Ensure we have a key
+        global GEMINI_API_KEY
+        if not GEMINI_API_KEY:
+            print(PRIMARY_COLOR + "Gemini API Key not configured.")
+            user_key = input(Fore.YELLOW + "Enter API Key (or press Enter to use shared system key): " + Style.RESET_ALL).strip()
+            
+            if user_key:
+                 GEMINI_API_KEY = user_key
+                 genai.configure(api_key=GEMINI_API_KEY)
+                 print(Fore.GREEN + "✓ Key configured locally.")
+            else:
+                 print(Fore.MAGENTA + "Attempting to fetch shared key from Redis...")
+                 self.fetch_gemini_key_from_redis()
+        
+        # Double check if we have a key now
+        if not GEMINI_API_KEY:
+             print(Fore.RED + "Error: No API Key available. Cannot start Gemini session.")
+             print(Fore.RED + "Please add GEMINI_API_KEY to .env or use /set_gemini_key")
+             return
 
         model = genai.GenerativeModel('gemini-1.5-flash')
         chat_session = model.start_chat(history=[])
@@ -626,16 +660,22 @@ class RedisChat:
                     print(PRIMARY_COLOR + "Exiting Gemini Mode...\n")
                     break
                 
+                # Broadcast the question so others see it
+                print(Fore.CYAN + "Broadcasting question..." + Style.RESET_ALL)
+                self.send_message(f"[Gemini Query] {user_input}")
+                
                 # Use Spinner for thinking
                 Effects.spinner("Thinking...", duration=0.5) 
                 
                 try:
-                    # We print over the spinner line or just after
-                    # The spinner ends with a newline, so we are good
-                    print(Fore.YELLOW + "Generating response...", end="\r")
+                    # Generate response
                     response = chat_session.send_message(user_input)
-                    print(" " * 30, end="\r") # Clear 
-                    print(Fore.WHITE + response.text + "\n")
+                    
+                    # Broadcast response as "Gemini AI"
+                    self.post_as_bot(f"{Fore.MAGENTA}Gemini AI 🤖{Style.RESET_ALL}", response.text)
+                    
+                    print(Fore.GREEN + "✓ Response sent to chat" + Style.RESET_ALL + "\n")
+                    
                 except Exception as e:
                     print(Fore.RED + f"\nError from Gemini: {e}\n")
                     
