@@ -83,6 +83,7 @@ if not REDIS_URL or not REDIS_TOKEN:
 
 CHAT_KEY = "chat:messages"
 USERS_KEY = "chat:users"
+CONFIG_GEMINI_KEY = "chat:config:gemini_key"
 
 # Custom Completer for @mentions
 class UserCompleter(Completer):
@@ -116,6 +117,44 @@ class RedisChat:
         self.message_counter = 0
         self.known_users = set()
         self.users_lock = threading.Lock()
+        self.active_user_count = 1
+        
+        # Try to load Gemini Key from Redis if not in Env
+        if not GEMINI_API_KEY and GEMINI_AVAILABLE:
+            self.fetch_gemini_key_from_redis()
+            
+    def fetch_gemini_key_from_redis(self):
+        """Fetch Gemini API key from Redis shared storage"""
+        print(PRIMARY_COLOR + "Checking Redis for shared Gemini API key...")
+        try:
+            response = self.redis_request("GET", [CONFIG_GEMINI_KEY])
+            if response and response.get("result"):
+                key = response["result"]
+                genai.configure(api_key=key)
+                global GEMINI_API_KEY 
+                GEMINI_API_KEY = key
+                print(PRIMARY_COLOR + "✓ Loaded Gemini API Key from sync storage")
+            else:
+                print(PRIMARY_COLOR + "! No Gemini API Key found in storage.")
+        except Exception as e:
+            print(ERROR_COLOR + f"Failed to fetch key: {e}")
+
+    def set_gemini_key_in_redis(self, key):
+        """Securely save Gemini API key to Redis"""
+        if not key.strip():
+            print(ERROR_COLOR + "Invalid key")
+            return
+        
+        try:
+            self.redis_request("SET", [CONFIG_GEMINI_KEY, key])
+            print(PRIMARY_COLOR + "✓ Gemini API Key saved to shared storage! Friends can now use it.")
+            # Also configure locally
+            genai.configure(api_key=key)
+            global GEMINI_API_KEY
+            GEMINI_API_KEY = key
+        except Exception as e:
+             print(ERROR_COLOR + f"Failed to save key: {e}")
+
         
     def update_known_users(self, users_list=None):
         if users_list:
@@ -250,14 +289,13 @@ class RedisChat:
         # Highlight mentions in the message body
         # logic: replace @MyName with colored version
         if self.username:
-            # Highlight @everyone
-            if "@everyone" in message:
-                message = message.replace("@everyone", f"{MENTION_COLOR}@everyone{msg_color}")
+            # Highlight all mentions (words starting with @)
+            def replace_mention(match):
+                mention_text = match.group(0)
+                # If it is @everyone or @any_other_user, color it yellow
+                return f"{MENTION_COLOR}{mention_text}{msg_color}"
             
-            # Highlight my name
-            pattern = re.compile(re.escape(f"@{self.username}"), re.IGNORECASE)
-            if pattern.search(message):
-                 message = pattern.sub(f"{MENTION_COLOR}@{self.username}{msg_color}", message)
+            message = re.sub(r'@\w+', replace_mention, message)
 
         final_str = f"{PRIMARY_COLOR}[{timestamp}] {display_prefix}{user_color}{username}{PRIMARY_COLOR}: {msg_color}{message}"
         
@@ -345,11 +383,12 @@ class RedisChat:
                                     
                                     # Scan for high priority alerts
                                     for s, t in relevant_msgs:
-                                        if "@everyone" in t:
+                                        t_lower = t.lower()
+                                        if "@everyone" in t_lower:
                                             notif_title = "📢 @everyone Mentioned!"
                                             is_mention = True
                                             break
-                                        if f"@{self.username}" in t:
+                                        if f"@{self.username.lower()}" in t_lower:
                                             notif_title = "🔔 You were mentioned!"
                                             is_mention = True
                                             break
@@ -373,7 +412,7 @@ class RedisChat:
                             # If NOT using prompt_toolkit, we need to manually restore prompt.
                             # If using prompt_toolkit + patch_stdout, the prompt is restored automatically.
                             if not PROMPT_TOOLKIT_AVAILABLE:
-                                print(PRIMARY_COLOR + ">>> ", end="", flush=True)
+                                print(PRIMARY_COLOR + f"({self.active_user_count} Online) >>> ", end="", flush=True)
                         
                         self.last_count = current_count
                 
@@ -382,6 +421,7 @@ class RedisChat:
                      users_resp = self.redis_request("SMEMBERS", [USERS_KEY])
                      if users_resp and users_resp.get("result"):
                          self.update_known_users(users_resp["result"])
+                         self.active_user_count = len(users_resp["result"])
 
                 time.sleep(1)  # Check for new messages every second
             except Exception as e:
@@ -415,6 +455,7 @@ class RedisChat:
         print(f"{PRIMARY_COLOR}/gemini   - Switch to Gemini AI CLI")
         print(f"{PRIMARY_COLOR}/help     - Show this help menu")
         print(f"{PRIMARY_COLOR}/quit     - Exit the chat")
+        print(f"{PRIMARY_COLOR}/set_gemini_key [key] - Securely sync API key with friends")
         print(f"{PRIMARY_COLOR}@user /silent [msg] - Send private message")
         print(f"{PRIMARY_COLOR}Any text   - Send a message")
         print(PRIMARY_COLOR + "="*60 + "\n")
@@ -438,7 +479,7 @@ class RedisChat:
 
         while True:
             try:
-                user_input = input(Fore.CYAN + "Gemini > " + Style.RESET_ALL).strip()
+                user_input = input(Fore.MAGENTA + "Gemini > " + Style.RESET_ALL).strip()
                 
                 if not user_input:
                     continue
@@ -495,9 +536,9 @@ class RedisChat:
                 try:
                     if PROMPT_TOOLKIT_AVAILABLE:
                         with patch_stdout():
-                            message = session.prompt(">>> ").strip()
+                            message = session.prompt(f"({self.active_user_count} Online) >>> ").strip()
                     else:
-                        message = input(PRIMARY_COLOR + ">>> ").strip()
+                        message = input(PRIMARY_COLOR + f"({self.active_user_count} Online) >>> ").strip()
                     
                     if not message:
                         continue
@@ -512,6 +553,12 @@ class RedisChat:
                         self.show_history()
                     elif message.lower() == "/gemini":
                         self.start_gemini_cli()
+                    elif message.lower().startswith("/set_gemini_key"):
+                        parts = message.split(' ')
+                        if len(parts) > 1:
+                            self.set_gemini_key_in_redis(parts[1])
+                        else:
+                            print(ERROR_COLOR + "Usage: /set_gemini_key <your_api_key>")
                     else:
                         self.send_message(message)
                 
